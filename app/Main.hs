@@ -1,6 +1,14 @@
 module Main where
 import Data.Char (isNumber, digitToInt, intToDigit)
 import Data.Foldable
+import GHC.Utils.Misc (split)
+
+data Cube = Red | Green | Blue
+-- type ReadS a = String -> [(a, String)]
+
+newtype HandfulOfCubes = HandFulOfCubes [(Cube, Int)]
+
+newtype CubeGame = CubeGame [[HandfulOfCubes]]
 
 isDigit :: String -> Bool
 isDigit "one" = True
@@ -48,6 +56,7 @@ digitStringToInt "9" = 9
 digitStringToInt "0" = 10
 digitStringToInt _ = undefined
 
+
 digitStringToChar :: String -> Char
 digitStringToChar = intToDigit . digitStringToInt
 
@@ -59,11 +68,24 @@ allCombos (x:xs) = prefixes (length xs) ++ allCombos xs
         prefixes 0 = [[x]]
         prefixes n = (x : take n xs) : prefixes (n - 1)
 
-trebuchet :: String -> Int
-trebuchet s =
-    foldr 
+parseCubeGame :: String -> CubeGame
+parseCubeGame ln =
+    let splitOnColon     = split ':' ln
+        rounds = split ';' $ last splitOnColon
+        gameId = last (words $ head splitOnColon)
+        games = 
+            map 
+            (\r -> undefined 
+
+            ) 
+            rounds   
+    in CubeGame games
+
+trebuchet :: [String] -> Int
+trebuchet =
+    foldr
     (\ln acc ->
-        case 
+        case
             (do
                 firstN <- find isNumber ln
                 lastN  <- find isNumber (reverse ln)
@@ -72,14 +94,14 @@ trebuchet s =
         of
             Nothing -> acc
             Just n  -> acc + n
-    ) 0 (lines s)
+    ) 0
 
 
-trebuchet' :: String -> Int
-trebuchet' s = 
-    foldr 
-    (\ln acc -> 
-        case 
+trebuchet' :: [String] -> Int
+trebuchet' =
+    foldr
+    (\ln acc ->
+        case
             (do
                 firstN <- find isDigit (allCombos ln)
                 lastN  <- find isDigit (reverse $ allCombos ln)
@@ -88,20 +110,34 @@ trebuchet' s =
         of
             Nothing -> acc
             Just n  -> acc + n
-    ) 0 (lines s)
+    ) 0
+
+cubeConundrum :: [String] -> Int
+cubeConundrum =
+    foldr
+    (\ln acc ->
+        _
+    ) 0
 
 day1p1 :: IO Int
 day1p1 = do
     day1p1Input <- readFile "resources/day_1_1_input.txt"
-    let result = trebuchet day1p1Input
+    let result = trebuchet $ lines day1p1Input
     writeFile "dist/day_1_1_output.txt" $ show result
     return result
 
 day1p2 :: IO Int
 day1p2 = do
     day1p2Input <- readFile "resources/day_1_2_input.txt"
-    let result = trebuchet' day1p2Input
+    let result = trebuchet' $ lines day1p2Input
     writeFile "dist/day_1_2_output.txt" $ show result
+    return result
+
+day2p1 :: IO Int
+day2p1 = do
+    day2p1Input <- readFile "resources/day_2_1_input.txt"
+    let result = cubeConundrum $ lines day2p1Input
+    writeFile "dist/day_2_1_output.txt" $ show result
     return result
 
 main :: IO ()
@@ -110,3 +146,5 @@ main = do
     putStrLn $ "day 1 - part 1 - result: " ++ show day1p1Result
     day1p2Result <- day1p2
     putStrLn $ "day 1 - part 2 - result: " ++ show day1p2Result
+    day2p1Result <- day2p1
+    putStrLn $ "day 2 - part 1 - result: " ++ show day2p1Result

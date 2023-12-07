@@ -20,6 +20,16 @@
   (major1) == 4 && (major2) <  16 || \
   (major1) == 4 && (major2) == 16 && (minor) <= 4)
 #endif /* MIN_VERSION_base */
+/* package ghc-9.2.8 */
+#ifndef VERSION_ghc
+#define VERSION_ghc "9.2.8"
+#endif /* VERSION_ghc */
+#ifndef MIN_VERSION_ghc
+#define MIN_VERSION_ghc(major1,major2,minor) (\
+  (major1) <  9 || \
+  (major1) == 9 && (major2) <  2 || \
+  (major1) == 9 && (major2) == 2 && (minor) <= 8)
+#endif /* MIN_VERSION_ghc */
 
 /* tool gcc-11 */
 #ifndef TOOL_VERSION_gcc
