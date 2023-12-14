@@ -1,14 +1,58 @@
 module Main where
-import Data.Char (isNumber, digitToInt, intToDigit)
+import Data.Char (isNumber, digitToInt, intToDigit, isUpper)
 import Data.Foldable
 import GHC.Utils.Misc (split)
+import Text.Megaparsec
+import Text.Megaparsec.Char
+import Data.Void
+import GHC.Plugins (sep)
 
 data Cube = Red | Green | Blue
+    deriving (Show, Eq)
 -- type ReadS a = String -> [(a, String)]
 
-newtype HandfulOfCubes = HandFulOfCubes [(Cube, Int)]
+newtype HandfulOfCubes = HandFulOfCubes [(Int, Cube)]
+ deriving (Show)
 
-newtype CubeGame = CubeGame [[HandfulOfCubes]]
+data Game = Game Int [HandfulOfCubes]
+    deriving (Show)
+
+newtype CubeGame = CubeGame [Game]
+ deriving (Show)
+
+type Parser = Parsec Void String
+
+parseCubeOccurs :: Parser (Int, Cube)
+parseCubeOccurs = do
+    _ <- space
+    occur <- read <$> many digitChar
+    _  <- space
+    cube <- choice
+        [
+            Red <$ string "red"
+        ,   Green <$ string "green"
+        ,   Blue  <$ string "blue"
+        ]
+    return (occur, cube)
+
+pHandfulOfCubes :: Parser HandfulOfCubes
+pHandfulOfCubes = do
+    HandFulOfCubes <$>
+        sepEndBy parseCubeOccurs (char ',')
+
+parseGame :: Parser Game
+parseGame = do
+    _ <- string "Game "
+    gameId <- read <$> many digitChar
+    _ <- char ':'
+    handfuls <- sepEndBy pHandfulOfCubes (char ';')
+    return $ Game gameId handfuls
+
+pCubeGame :: Parser CubeGame
+pCubeGame = do
+    CubeGame <$>
+        sepEndBy parseGame eol
+  
 
 isDigit :: String -> Bool
 isDigit "one" = True
@@ -68,19 +112,6 @@ allCombos (x:xs) = prefixes (length xs) ++ allCombos xs
         prefixes 0 = [[x]]
         prefixes n = (x : take n xs) : prefixes (n - 1)
 
-parseCubeGame :: String -> CubeGame
-parseCubeGame ln =
-    let splitOnColon     = split ':' ln
-        rounds = split ';' $ last splitOnColon
-        gameId = last (words $ head splitOnColon)
-        games = 
-            map 
-            (\r -> undefined 
-
-            ) 
-            rounds   
-    in CubeGame games
-
 trebuchet :: [String] -> Int
 trebuchet =
     foldr
@@ -112,12 +143,8 @@ trebuchet' =
             Just n  -> acc + n
     ) 0
 
-cubeConundrum :: [String] -> Int
-cubeConundrum =
-    foldr
-    (\ln acc ->
-        _
-    ) 0
+cubeConundrum :: CubeGame -> Int
+cubeConundrum cubeGame = 0
 
 day1p1 :: IO Int
 day1p1 = do
@@ -136,9 +163,14 @@ day1p2 = do
 day2p1 :: IO Int
 day2p1 = do
     day2p1Input <- readFile "resources/day_2_1_input.txt"
-    let result = cubeConundrum $ lines day2p1Input
-    writeFile "dist/day_2_1_output.txt" $ show result
-    return result
+    let cubeGameParsed = parse pCubeGame "resources/day_2_1_input.txt" day2p1Input
+    case cubeGameParsed of
+        Left e -> error "error parsing"
+        Right cubeGame -> do
+            print cubeGame
+            let result = cubeConundrum cubeGame
+            writeFile "dist/day_2_1_output.txt" $ show result
+            return result
 
 main :: IO ()
 main = do
