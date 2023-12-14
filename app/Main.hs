@@ -6,6 +6,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Data.Void
 import GHC.Plugins (sep)
+import System.Directory
 
 data Cube = Red | Green | Blue
     deriving (Show, Eq)
@@ -174,6 +175,7 @@ day2p1 = do
 
 main :: IO ()
 main = do
+    createDirectoryIfMissing True "dist"
     day1p1Result <- day1p1
     putStrLn $ "day 1 - part 1 - result: " ++ show day1p1Result
     day1p2Result <- day1p2
