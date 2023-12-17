@@ -7,24 +7,19 @@ import Text.Megaparsec.Char
 import Data.Void
 import GHC.Plugins (sep)
 import System.Directory
+import Data.List
 
 data Cube = Red | Green | Blue
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 -- type ReadS a = String -> [(a, String)]
 
-newtype HandfulOfCubes = HandFulOfCubes [(Int, Cube)]
- deriving (Show)
-
-data Game = Game Int [HandfulOfCubes]
+data Game = Game { gameId :: Int, rounds :: [[(Int, Cube)]] }
     deriving (Show)
-
-newtype CubeGame = CubeGame [Game]
- deriving (Show)
 
 type Parser = Parsec Void String
 
-parseCubeOccurs :: Parser (Int, Cube)
-parseCubeOccurs = do
+pCubeOccurs :: Parser (Int, Cube)
+pCubeOccurs = do
     _ <- space
     occur <- read <$> many digitChar
     _  <- space
@@ -36,24 +31,20 @@ parseCubeOccurs = do
         ]
     return (occur, cube)
 
-pHandfulOfCubes :: Parser HandfulOfCubes
-pHandfulOfCubes = do
-    HandFulOfCubes <$>
-        sepEndBy parseCubeOccurs (char ',')
+pHandfulOfCubes :: Parser [(Int, Cube)]
+pHandfulOfCubes = sepEndBy pCubeOccurs (char ',')
 
-parseGame :: Parser Game
-parseGame = do
+pGame :: Parser Game
+pGame = do
     _ <- string "Game "
     gameId <- read <$> many digitChar
     _ <- char ':'
     handfuls <- sepEndBy pHandfulOfCubes (char ';')
     return $ Game gameId handfuls
 
-pCubeGame :: Parser CubeGame
-pCubeGame = do
-    CubeGame <$>
-        sepEndBy parseGame eol
-  
+pGames :: Parser [Game]
+pGames = sepEndBy pGame eol
+
 
 isDigit :: String -> Bool
 isDigit "one" = True
@@ -144,8 +135,28 @@ trebuchet' =
             Just n  -> acc + n
     ) 0
 
-cubeConundrum :: CubeGame -> Int
-cubeConundrum cubeGame = 0
+
+isHandfulPossible :: [(Int, Cube)] -> [(Int, Cube)] -> Bool
+isHandfulPossible config = foldr
+    (\cubeOccur acc ->
+        acc && case find ((== snd cubeOccur) . snd) config of
+            Just (configCubeOccurs, _) -> configCubeOccurs >= fst cubeOccur
+            Nothing -> False
+    ) True
+
+cubeConundrum :: [(Int, Cube)] -> [Game] -> Int
+cubeConundrum config =
+    sum . map gameId . filter (all (isHandfulPossible config) . rounds)
+
+cubeConundrum' :: [(Int, Cube)] -> [Game] -> Int
+cubeConundrum' config = foldr
+    (\game acc ->
+        case game of
+            Game id handfuls ->
+                if all (isHandfulPossible config) handfuls
+                then acc + id
+                else acc
+    ) 0
 
 day1p1 :: IO Int
 day1p1 = do
@@ -164,12 +175,12 @@ day1p2 = do
 day2p1 :: IO Int
 day2p1 = do
     day2p1Input <- readFile "resources/day_2_1_input.txt"
-    let cubeGameParsed = parse pCubeGame "resources/day_2_1_input.txt" day2p1Input
-    case cubeGameParsed of
+    let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
+    case gamesParsed of
         Left e -> error "error parsing"
-        Right cubeGame -> do
-            print cubeGame
-            let result = cubeConundrum cubeGame
+        Right games -> do
+            let config = [(12, Red),(13, Green),(14, Blue)]
+            let result = cubeConundrum config games
             writeFile "dist/day_2_1_output.txt" $ show result
             return result
 
