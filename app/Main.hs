@@ -15,6 +15,10 @@ import qualified Data.Map.Strict as Map
 import Data.Tuple (swap)
 import Data.Maybe
 
+type Position = (Int, Int)
+type MatrixNum = (Int, [Position])
+type MatrixSymbol = (Char, Position)
+
 data Cube = Red | Green | Blue
     deriving (Show, Eq, Ord)
 -- type ReadS a = String -> [(a, String)]
@@ -184,6 +188,22 @@ cubeConundrum' :: [Game] -> Int
 cubeConundrum' =
     sum . map (product . map fst . minimumConfig)
 
+getNumbersInSchematic :: [[Char]] -> [MatrixNum]
+getNumbersInSchematic schematic = undefined
+
+getSymbolsInSchematic :: [[Char]] -> [MatrixSymbol]
+getSymbolsInSchematic schematic = undefined
+
+hasAdjacentSymbol :: [MatrixSymbol] -> MatrixNum -> Bool
+hasAdjacentSymbol symbols num = undefined
+
+gearRatios :: [[Char]] -> Int
+gearRatios schematic = 
+    sum $ map fst $ filter (hasAdjacentSymbol symbols) numbers
+    where
+        symbols = getSymbolsInSchematic schematic
+        numbers = getNumbersInSchematic schematic
+
 day1p1 :: IO Int
 day1p1 = do
     day1p1Input <- readFile "resources/day_1_1_input.txt"
@@ -220,6 +240,14 @@ day2p2 = do
             let result = cubeConundrum' games
             writeFile "dist/day_2_2_output.txt" $ show result
             return result
+
+day3p1 :: IO Int
+day3p1 = do
+    day3p1Input <- readFile "resources/day_3_1_input.txt"
+    let schematic = lines day3p1Input
+    let result = gearRatios schematic
+    writeFile "dist/day_1_2_output.txt" $ show result
+    return result
 
 main :: IO ()
 main = do
