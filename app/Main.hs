@@ -9,6 +9,12 @@ import GHC.Plugins (sep)
 import System.Directory
 import Data.List
 
+import Data.Map.Merge.Strict
+
+import qualified Data.Map.Strict as Map
+import Data.Tuple (swap)
+import Data.Maybe
+
 data Cube = Red | Green | Blue
     deriving (Show, Eq, Ord)
 -- type ReadS a = String -> [(a, String)]
@@ -31,16 +37,16 @@ pCubeOccurs = do
         ]
     return (occur, cube)
 
-pHandfulOfCubes :: Parser [(Int, Cube)]
-pHandfulOfCubes = sepEndBy pCubeOccurs (char ',')
+pRound :: Parser [(Int, Cube)]
+pRound = sepEndBy pCubeOccurs (char ',')
 
 pGame :: Parser Game
 pGame = do
     _ <- string "Game "
     gameId <- read <$> many digitChar
     _ <- char ':'
-    handfuls <- sepEndBy pHandfulOfCubes (char ';')
-    return $ Game gameId handfuls
+    rounds <- sepEndBy pRound (char ';')
+    return $ Game gameId rounds
 
 pGames :: Parser [Game]
 pGames = sepEndBy pGame eol
@@ -136,8 +142,8 @@ trebuchet' =
     ) 0
 
 
-isHandfulPossible :: [(Int, Cube)] -> [(Int, Cube)] -> Bool
-isHandfulPossible config = foldr
+isRoundPossible :: [(Int, Cube)] -> [(Int, Cube)] -> Bool
+isRoundPossible config = foldr
     (\cubeOccur acc ->
         acc && case find ((== snd cubeOccur) . snd) config of
             Just (configCubeOccurs, _) -> configCubeOccurs >= fst cubeOccur
@@ -146,17 +152,37 @@ isHandfulPossible config = foldr
 
 cubeConundrum :: [(Int, Cube)] -> [Game] -> Int
 cubeConundrum config =
-    sum . map gameId . filter (all (isHandfulPossible config) . rounds)
+    sum . map gameId . filter (all (isRoundPossible config) . rounds)
 
-cubeConundrum' :: [(Int, Cube)] -> [Game] -> Int
-cubeConundrum' config = foldr
-    (\game acc ->
-        case game of
-            Game id handfuls ->
-                if all (isHandfulPossible config) handfuls
-                then acc + id
-                else acc
-    ) 0
+roundToMap :: [(Int, Cube)] -> Map.Map Cube Int
+roundToMap = Map.fromList . map swap
+
+takeBiggerValue :: WhenMatched Maybe Cube Int Int Int
+takeBiggerValue =
+    zipWithAMatched
+    (\_ x y ->
+        Just $ max x y
+    )
+
+minimumConfig :: Game -> [(Int, Cube)]
+minimumConfig game =
+    map swap $
+    Map.toList $
+        foldr
+        (\r acc ->
+            fromMaybe acc 
+                (mergeA 
+                    preserveMissing 
+                    preserveMissing 
+                    takeBiggerValue 
+                    (roundToMap r) 
+                    acc
+                )
+        ) Map.empty (rounds game)
+
+cubeConundrum' :: [Game] -> Int
+cubeConundrum' =
+    sum . map (product . map fst . minimumConfig)
 
 day1p1 :: IO Int
 day1p1 = do
@@ -184,6 +210,17 @@ day2p1 = do
             writeFile "dist/day_2_1_output.txt" $ show result
             return result
 
+day2p2 :: IO Int
+day2p2 = do
+    day2p1Input <- readFile "resources/day_2_1_input.txt"
+    let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
+    case gamesParsed of
+        Left e -> error "error parsing"
+        Right games -> do
+            let result = cubeConundrum' games
+            writeFile "dist/day_2_2_output.txt" $ show result
+            return result
+
 main :: IO ()
 main = do
     createDirectoryIfMissing True "dist"
@@ -193,3 +230,5 @@ main = do
     putStrLn $ "day 1 - part 2 - result: " ++ show day1p2Result
     day2p1Result <- day2p1
     putStrLn $ "day 2 - part 1 - result: " ++ show day2p1Result
+    day2p2Result <- day2p2
+    putStrLn $ "day 2 - part 2 - result: " ++ show day2p2Result
