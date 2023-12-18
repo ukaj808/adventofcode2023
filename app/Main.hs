@@ -5,7 +5,7 @@ import GHC.Utils.Misc (split)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Data.Void
-import GHC.Plugins (sep)
+import GHC.Plugins (sep, DynFlags (backend))
 import System.Directory
 import Data.List
 
@@ -174,12 +174,12 @@ minimumConfig game =
     Map.toList $
         foldr
         (\r acc ->
-            fromMaybe acc 
-                (mergeA 
-                    preserveMissing 
-                    preserveMissing 
-                    takeBiggerValue 
-                    (roundToMap r) 
+            fromMaybe acc
+                (mergeA
+                    preserveMissing
+                    preserveMissing
+                    takeBiggerValue
+                    (roundToMap r)
                     acc
                 )
         ) Map.empty (rounds game)
@@ -188,8 +188,41 @@ cubeConundrum' :: [Game] -> Int
 cubeConundrum' =
     sum . map (product . map fst . minimumConfig)
 
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x
+
+snd3 :: (a, b, c) -> b
+snd3 (_, y, _) = y
+
+trd3 :: (a, b, c) -> c
+trd3 (_,_,z) = z
+
 getNumbersInSchematic :: [[Char]] -> [MatrixNum]
-getNumbersInSchematic schematic = undefined
+getNumbersInSchematic schematic =
+    foldr
+    (\(i, ln) acc ->
+        acc ++ fst3 (foldr
+        (\(j, c) (acc', mNum, cont) ->
+            if isNumber c
+            then
+                if cont
+                then
+                    case mNum of
+                        Nothing -> undefined
+                        Just n -> (acc', Just (read $ c : show (fst n), (i, j) : snd n), True)
+                else (acc', Just (digitToInt c, [(i, j)]), True)
+            else
+                if cont
+                then
+                    case mNum of
+                        Nothing -> undefined
+                        Just n -> (n : acc', Nothing, False)
+                else (acc', Nothing, False)
+        )
+        ([], Nothing, False)
+        (zip [0..] ln))
+    )
+    [] (zip [0..] schematic)
 
 getSymbolsInSchematic :: [[Char]] -> [MatrixSymbol]
 getSymbolsInSchematic schematic = undefined
@@ -198,7 +231,7 @@ hasAdjacentSymbol :: [MatrixSymbol] -> MatrixNum -> Bool
 hasAdjacentSymbol symbols num = undefined
 
 gearRatios :: [[Char]] -> Int
-gearRatios schematic = 
+gearRatios schematic =
     sum $ map fst $ filter (hasAdjacentSymbol symbols) numbers
     where
         symbols = getSymbolsInSchematic schematic
