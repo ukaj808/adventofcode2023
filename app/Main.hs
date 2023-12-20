@@ -1,9 +1,8 @@
 module Main where
-import Data.Char (isNumber, digitToInt, intToDigit, isUpper)
+import Data.Char (isNumber, digitToInt, intToDigit, isUpper, isSymbol, isAlphaNum)
 import Data.Foldable
 import GHC.Utils.Misc (split)
 import Text.Megaparsec
-import Text.Megaparsec.Char
 import Data.Void
 import GHC.Plugins (sep, DynFlags (backend))
 import System.Directory
@@ -14,10 +13,11 @@ import Data.Map.Merge.Strict
 import qualified Data.Map.Strict as Map
 import Data.Tuple (swap)
 import Data.Maybe
+import Text.Megaparsec.Char
 
 type Position = (Int, Int)
-type MatrixNum = (Int, [Position])
-type MatrixSymbol = (Char, Position)
+type MatrixNum = (Int, [Int])
+type MatrixSymbol = (Char, Int)
 
 data Cube = Red | Green | Blue
     deriving (Show, Eq, Ord)
@@ -188,41 +188,58 @@ cubeConundrum' :: [Game] -> Int
 cubeConundrum' =
     sum . map (product . map fst . minimumConfig)
 
-fst3 :: (a, b, c) -> a
-fst3 (x, _, _) = x
+isSymbol' :: Char -> Bool
+isSymbol' c = not (isAlphaNum c) && (c /= '.')
 
-snd3 :: (a, b, c) -> b
-snd3 (_, y, _) = y
+pSymbol :: Parser Char
+pSymbol = satisfy isSymbol'
 
-trd3 :: (a, b, c) -> c
-trd3 (_,_,z) = z
+pPeriod :: Parser Char
+pPeriod = satisfy (=='.')
 
-getNumbersInSchematic :: [[Char]] -> [MatrixNum]
-getNumbersInSchematic schematic =
-    foldr
-    (\(i, ln) acc ->
-        acc ++ fst3 (foldr
-        (\(j, c) (acc', mNum, cont) ->
-            if isNumber c
-            then
-                if cont
-                then
-                    case mNum of
-                        Nothing -> undefined
-                        Just n -> (acc', Just (read $ c : show (fst n), (i, j) : snd n), True)
-                else (acc', Just (digitToInt c, [(i, j)]), True)
-            else
-                if cont
-                then
-                    case mNum of
-                        Nothing -> undefined
-                        Just n -> (n : acc', Nothing, False)
-                else (acc', Nothing, False)
-        )
-        ([], Nothing, False)
-        (zip [0..] ln))
-    )
-    [] (zip [0..] schematic)
+pWithOffset :: Parser a -> Parser (a, Int)
+pWithOffset pa = do
+    i <- getOffset
+    a <- pa
+    return (a, i)
+
+pDigitsWithOffsets :: Parser [(Char, Int)]
+pDigitsWithOffsets = some $ pWithOffset digitChar
+
+pDigitsWithOffsets' :: Parser [Char]
+pDigitsWithOffsets' = takeWhile1P Nothing isNumber
+
+pSymbolWithOffset :: Parser (Char, Int)
+pSymbolWithOffset = pWithOffset pSymbol
+
+pMatrixNum :: Parser MatrixNum
+pMatrixNum =
+   (\(x, y) -> (read x, y))
+   <$> foldr (\(c, i) acc -> (c : fst acc, i : snd acc)) ("", [])
+   <$> pDigitsWithOffsets
+
+pMatrixNumOrSymbol :: Parser (Either MatrixNum MatrixSymbol)
+pMatrixNumOrSymbol = Left <$> pMatrixNum <|> Right <$> pSymbolWithOffset
+
+pMatrixNumOrSymbolOrPeriod :: Parser (Either (Either MatrixNum MatrixSymbol) Char)
+pMatrixNumOrSymbolOrPeriod = Left <$> pMatrixNumOrSymbol <|> Right <$> pPeriod
+
+pSchematic :: Parser ([MatrixNum],[MatrixSymbol])
+pSchematic = 
+  foldr 
+     (\e acc ->
+        case e of
+            Left e' ->
+                case e' of
+                    Left mn -> (mn : fst acc, snd acc)
+                    Right ms -> (fst acc, ms : snd acc)
+            Right _ -> acc
+     )
+     ([],[]) 
+  <$> concat 
+  <$> sepBy1 (some pMatrixNumOrSymbolOrPeriod) eol
+
+-- parse numbers including all of there indices
 
 getSymbolsInSchematic :: [[Char]] -> [MatrixSymbol]
 getSymbolsInSchematic schematic = undefined
@@ -235,7 +252,7 @@ gearRatios schematic =
     sum $ map fst $ filter (hasAdjacentSymbol symbols) numbers
     where
         symbols = getSymbolsInSchematic schematic
-        numbers = getNumbersInSchematic schematic
+        numbers = undefined
 
 day1p1 :: IO Int
 day1p1 = do
@@ -277,8 +294,9 @@ day2p2 = do
 day3p1 :: IO Int
 day3p1 = do
     day3p1Input <- readFile "resources/day_3_1_input.txt"
-    let schematic = lines day3p1Input
-    let result = gearRatios schematic
+    let schematicParsed = parse pSchematic "resources/day_3_1_input.txt" day3p1Input
+    print schematicParsed
+    let result = gearRatios undefined
     writeFile "dist/day_1_2_output.txt" $ show result
     return result
 
