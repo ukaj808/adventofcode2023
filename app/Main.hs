@@ -1,63 +1,66 @@
 module Main where
-import Data.Char (isNumber, digitToInt, intToDigit, isUpper, isSymbol, isAlphaNum)
-import Data.Foldable
-import GHC.Utils.Misc (split)
-import Text.Megaparsec
-import Data.Void
-import GHC.Plugins (sep, DynFlags (backend))
-import System.Directory
-import Data.List
 
-import Data.Map.Merge.Strict
-
-import qualified Data.Map.Strict as Map
-import Data.Tuple (swap)
-import Data.Maybe
-import Text.Megaparsec.Char
-import Text.Megaparsec.Byte.Lexer (symbol)
 import Control.Monad (foldM_)
+import Data.Bifunctor
+import Data.Char (digitToInt, intToDigit, isAlphaNum, isNumber, isSymbol, isUpper)
+import Data.Foldable
+import Data.List
+import Data.Map.Merge.Strict
+import qualified Data.Map.Strict as Map
+import Data.Maybe
+import Data.Tuple (swap)
 import Data.Type.Coercion (sym)
+import Data.Void
+import GHC.Plugins (DynFlags (backend), sep)
+import GHC.Utils.Binary (Binary (put))
+import GHC.Utils.Misc (split)
+import System.Directory
+import Text.Megaparsec
+import Text.Megaparsec.Byte.Lexer (symbol)
+import Text.Megaparsec.Char
 
 type Position = (Int, Int)
-type MatrixNum = (Int, [Position])
+
+type MatrixNum = ([Position], Int)
+
 type MatrixSymbol = (Position, Char)
 
 data Cube = Red | Green | Blue
-    deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord)
+
 -- type ReadS a = String -> [(a, String)]
 
-data Game = Game { gameId :: Int, rounds :: [[(Int, Cube)]] }
-    deriving (Show)
+data Game = Game {gameId :: Int, rounds :: [[(Int, Cube)]]}
+  deriving (Show)
 
 type Parser = Parsec Void String
 
 pCubeOccurs :: Parser (Int, Cube)
 pCubeOccurs = do
-    _ <- space
-    occur <- read <$> many digitChar
-    _  <- space
-    cube <- choice
-        [
-            Red <$ string "red"
-        ,   Green <$ string "green"
-        ,   Blue  <$ string "blue"
-        ]
-    return (occur, cube)
+  _ <- space
+  occur <- read <$> many digitChar
+  _ <- space
+  cube <-
+    choice
+      [ Red <$ string "red",
+        Green <$ string "green",
+        Blue <$ string "blue"
+      ]
+  return (occur, cube)
 
 pRound :: Parser [(Int, Cube)]
 pRound = sepEndBy pCubeOccurs (char ',')
 
 pGame :: Parser Game
 pGame = do
-    _ <- string "Game "
-    gameId <- read <$> many digitChar
-    _ <- char ':'
-    rounds <- sepEndBy pRound (char ';')
-    return $ Game gameId rounds
+  _ <- string "Game "
+  gameId <- read <$> many digitChar
+  _ <- char ':'
+  rounds <- sepEndBy pRound (char ';')
+  return $ Game gameId rounds
 
 pGames :: Parser [Game]
 pGames = sepEndBy pGame eol
-
 
 isDigit :: String -> Bool
 isDigit "one" = True
@@ -105,114 +108,114 @@ digitStringToInt "9" = 9
 digitStringToInt "0" = 10
 digitStringToInt _ = undefined
 
-
 digitStringToChar :: String -> Char
 digitStringToChar = intToDigit . digitStringToInt
 
 allCombos :: String -> [String]
 allCombos [] = []
-allCombos (x:xs) = prefixes (length xs) ++ allCombos xs
-    where
-        prefixes :: Int -> [String]
-        prefixes 0 = [[x]]
-        prefixes n = (x : take n xs) : prefixes (n - 1)
+allCombos (x : xs) = prefixes (length xs) ++ allCombos xs
+  where
+    prefixes :: Int -> [String]
+    prefixes 0 = [[x]]
+    prefixes n = (x : take n xs) : prefixes (n - 1)
 
 trebuchet :: [String] -> Int
 trebuchet =
-    foldr
-    (\ln acc ->
-        case
-            (do
-                firstN <- find isNumber ln
-                lastN  <- find isNumber (reverse ln)
-                return $ read [firstN, lastN]
-            )
-        of
-            Nothing -> acc
-            Just n  -> acc + n
-    ) 0
-
+  foldr
+    ( \ln acc ->
+        case ( do
+                 firstN <- find isNumber ln
+                 lastN <- find isNumber (reverse ln)
+                 return $ read [firstN, lastN]
+             ) of
+          Nothing -> acc
+          Just n -> acc + n
+    )
+    0
 
 trebuchet' :: [String] -> Int
 trebuchet' =
-    foldr
-    (\ln acc ->
-        case
-            (do
-                firstN <- find isDigit (allCombos ln)
-                lastN  <- find isDigit (reverse $ allCombos ln)
-                return $ read [digitStringToChar firstN, digitStringToChar lastN]
-            )
-        of
-            Nothing -> acc
-            Just n  -> acc + n
-    ) 0
-
+  foldr
+    ( \ln acc ->
+        case ( do
+                 firstN <- find isDigit (allCombos ln)
+                 lastN <- find isDigit (reverse $ allCombos ln)
+                 return $ read [digitStringToChar firstN, digitStringToChar lastN]
+             ) of
+          Nothing -> acc
+          Just n -> acc + n
+    )
+    0
 
 isRoundPossible :: [(Int, Cube)] -> [(Int, Cube)] -> Bool
-isRoundPossible config = foldr
-    (\cubeOccur acc ->
+isRoundPossible config =
+  foldr
+    ( \cubeOccur acc ->
         acc && case find ((== snd cubeOccur) . snd) config of
-            Just (configCubeOccurs, _) -> configCubeOccurs >= fst cubeOccur
-            Nothing -> False
-    ) True
+          Just (configCubeOccurs, _) -> configCubeOccurs >= fst cubeOccur
+          Nothing -> False
+    )
+    True
 
 cubeConundrum :: [(Int, Cube)] -> [Game] -> Int
 cubeConundrum config =
-    sum . map gameId . filter (all (isRoundPossible config) . rounds)
+  sum . map gameId . filter (all (isRoundPossible config) . rounds)
 
 roundToMap :: [(Int, Cube)] -> Map.Map Cube Int
 roundToMap = Map.fromList . map swap
 
 takeBiggerValue :: WhenMatched Maybe Cube Int Int Int
 takeBiggerValue =
-    zipWithAMatched
-    (\_ x y ->
+  zipWithAMatched
+    ( \_ x y ->
         Just $ max x y
     )
 
 minimumConfig :: Game -> [(Int, Cube)]
 minimumConfig game =
-    map swap $
+  map swap $
     Map.toList $
-        foldr
-        (\r acc ->
-            fromMaybe acc
-                (mergeA
-                    preserveMissing
-                    preserveMissing
-                    takeBiggerValue
-                    (roundToMap r)
-                    acc
-                )
-        ) Map.empty (rounds game)
+      foldr
+        ( \r acc ->
+            fromMaybe
+              acc
+              ( mergeA
+                  preserveMissing
+                  preserveMissing
+                  takeBiggerValue
+                  (roundToMap r)
+                  acc
+              )
+        )
+        Map.empty
+        (rounds game)
 
 cubeConundrum' :: [Game] -> Int
 cubeConundrum' =
-    sum . map (product . map fst . minimumConfig)
+  sum . map (product . map fst . minimumConfig)
 
 getIndices :: Int -> Int -> (Int, Int)
 getIndices offset numCols = (offset `div` numCols, offset `mod` numCols)
 
 isSymbol' :: Char -> Bool
-isSymbol' c = not (isAlphaNum c) && (c /= '.') && (c /= '\n')
+isSymbol' c = not (isAlphaNum c) && c /= '.' && c /= '\n'
 
 pSymbol :: Parser Char
 pSymbol = satisfy isSymbol'
 
 pPeriod :: Parser Char
-pPeriod = satisfy (=='.')
+pPeriod = satisfy (== '.')
 
 pWithOffset :: Parser a -> Parser (a, Int)
 pWithOffset pa = do
-    i <- getOffset
-    a <- pa
-    return (a, i)
+  i <- getOffset
+  a <- pa
+  return (a, i)
 
 pDigitsWithOffsets :: Parser [(Char, Int)]
 pDigitsWithOffsets = some $ pWithOffset digitChar
 
-pDigitsWithOffsets' :: Parser [Char]
+pDigitsWithOffsets' :: Parser String
 pDigitsWithOffsets' = takeWhile1P Nothing isNumber
 
 pSymbolWithOffset :: Parser (Char, Int)
@@ -223,9 +226,7 @@ pMatrixSymbol numCols = (\(c, i) -> (getIndices i numCols, c)) <$> pSymbolWithOf
 
 pMatrixNum :: Int -> Parser MatrixNum
 pMatrixNum numCols =
-   (\(x, y) -> (read x, y))
-   <$> foldr (\(c, i) acc -> (c : fst acc, getIndices i numCols : snd acc)) ("", [])
-   <$> pDigitsWithOffsets
+  (\(x, y) -> (x, read y)) . foldr (\(c, i) acc -> (getIndices i numCols : fst acc, c : snd acc)) ([], "") <$> pDigitsWithOffsets
 
 pMatrixNumOrSymbol :: Int -> Parser (Either MatrixNum MatrixSymbol)
 pMatrixNumOrSymbol numCols = Left <$> pMatrixNum numCols <|> Right <$> pMatrixSymbol numCols
@@ -233,109 +234,166 @@ pMatrixNumOrSymbol numCols = Left <$> pMatrixNum numCols <|> Right <$> pMatrixSy
 pMatrixNumOrSymbolOrPeriod :: Int -> Parser (Either (Either MatrixNum MatrixSymbol) Char)
 pMatrixNumOrSymbolOrPeriod numCols = Left <$> pMatrixNumOrSymbol numCols <|> Right <$> pPeriod
 
-pSchematic :: Int -> Parser ([MatrixNum],[MatrixSymbol])
+pSchematic :: Int -> Parser ([MatrixNum], [MatrixSymbol])
 pSchematic numCols =
   foldr
-     (\e acc ->
+    ( \e acc ->
         case e of
-            Left e' ->
-                case e' of
-                    Left mn -> (mn : fst acc, snd acc)
-                    Right ms -> (fst acc, ms : snd acc)
-            Right _ -> acc
-     )
-     ([],[])
-  <$> (some $ pMatrixNumOrSymbolOrPeriod numCols)
+          Left e' ->
+            case e' of
+              Left mn -> first (mn :) acc
+              Right ms -> second (ms :) acc
+          Right _ -> acc
+    )
+    ([], [])
+    <$> some (pMatrixNumOrSymbolOrPeriod numCols)
 
 hasAdjacentSymbol :: Map.Map Position Char -> MatrixNum -> Bool
-hasAdjacentSymbol symbolMap (num, positions) =
-    any
-    (\(i, j) ->
-        let
-            hasSymbolTopLeft = Map.member (i - 1, j - 1) symbolMap
+hasAdjacentSymbol symbolMap (positions, num) =
+  any
+    ( \(i, j) ->
+        let hasSymbolTopLeft = Map.member (i - 1, j - 1) symbolMap
             hasSymbolTopMiddle = Map.member (i - 1, j) symbolMap
             hasSymbolTopRight = Map.member (i - 1, j + 1) symbolMap
             hasSymbolMiddleRight = Map.member (i, j + 1) symbolMap
             hasSymbolBottomRight = Map.member (i + 1, j + 1) symbolMap
             hasSymbolBottomMiddle = Map.member (i + 1, j) symbolMap
             hasSymbolBottomLeft = Map.member (i + 1, j - 1) symbolMap
-            hasSymbolMiddleLeft = Map.member (i , j - 1) symbolMap
-        in
-            hasSymbolTopLeft || hasSymbolTopMiddle || hasSymbolTopRight ||
-            hasSymbolMiddleLeft ||                    hasSymbolMiddleRight ||
-            hasSymbolBottomLeft || hasSymbolBottomMiddle || hasSymbolBottomRight
-            
+            hasSymbolMiddleLeft = Map.member (i, j - 1) symbolMap
+         in hasSymbolTopLeft
+              || hasSymbolTopMiddle
+              || hasSymbolTopRight
+              || hasSymbolMiddleLeft
+              || hasSymbolMiddleRight
+              || hasSymbolBottomLeft
+              || hasSymbolBottomMiddle
+              || hasSymbolBottomRight
     )
     positions
 
+--todo should actually be a map of position -> int! flatten the indicies!!
+getAdjacentNumbers :: Map.Map [Position] Int -> MatrixSymbol -> [Int]
+getAdjacentNumbers matrixNumMap ((i, j), _) =
+  let surroundingIndices =
+        [ (i - 1, j - 1),
+          (i - 1, j),
+          (i - 1, j + 1),
+          (i, j + 1),
+          (i + 1, j + 1),
+          (i + 1, j),
+          (i + 1, j - 1),
+          (i, j - 1)
+        ]
+   in foldr
+        (\(i', j') ->
+            undefined
+        )
+        []
+        surroundingIndices
+
+collectGears :: Map.Map [Position] Int -> [MatrixSymbol] -> [(Int, Int)]
+collectGears matrixNumMap symbols =
+  foldr
+    ( \((i, j), c) acc ->
+        if c == '*'
+          then
+            let adjNums = getAdjacentNumbers matrixNumMap ((i, j), c)
+             in if length adjNums == 2
+                  then (adjNums!!0, adjNums!!1) : acc
+                  else acc
+          else acc
+    )
+    []
+    symbols
+
 gearRatios :: [MatrixNum] -> [MatrixSymbol] -> Int
 gearRatios numbers symbols =
-    let symbolMap = Map.fromList symbols
-    in
-    sum $ map fst $ filter (hasAdjacentSymbol symbolMap) numbers
+  let symbolMap = Map.fromList symbols
+   in sum $ map snd $ filter (hasAdjacentSymbol symbolMap) numbers
 
+gearRatios' :: [MatrixNum] -> [MatrixSymbol] -> Int
+gearRatios' numbers symbols =
+  let matrixNumMap = Map.fromList numbers
+      gears = collectGears matrixNumMap symbols
+   in sum $ map (uncurry (*)) gears
 
 day1p1 :: IO Int
 day1p1 = do
-    day1p1Input <- readFile "resources/day_1_1_input.txt"
-    let result = trebuchet $ lines day1p1Input
-    writeFile "dist/day_1_1_output.txt" $ show result
-    return result
+  day1p1Input <- readFile "resources/day_1_1_input.txt"
+  let result = trebuchet $ lines day1p1Input
+  writeFile "dist/day_1_1_output.txt" $ show result
+  return result
 
 day1p2 :: IO Int
 day1p2 = do
-    day1p2Input <- readFile "resources/day_1_2_input.txt"
-    let result = trebuchet' $ lines day1p2Input
-    writeFile "dist/day_1_2_output.txt" $ show result
-    return result
+  day1p2Input <- readFile "resources/day_1_2_input.txt"
+  let result = trebuchet' $ lines day1p2Input
+  writeFile "dist/day_1_2_output.txt" $ show result
+  return result
 
 day2p1 :: IO Int
 day2p1 = do
-    day2p1Input <- readFile "resources/day_2_1_input.txt"
-    let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
-    case gamesParsed of
-        Left e -> error "error parsing"
-        Right games -> do
-            let config = [(12, Red),(13, Green),(14, Blue)]
-            let result = cubeConundrum config games
-            writeFile "dist/day_2_1_output.txt" $ show result
-            return result
+  day2p1Input <- readFile "resources/day_2_1_input.txt"
+  let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
+  case gamesParsed of
+    Left e -> error "error parsing"
+    Right games -> do
+      let config = [(12, Red), (13, Green), (14, Blue)]
+      let result = cubeConundrum config games
+      writeFile "dist/day_2_1_output.txt" $ show result
+      return result
 
 day2p2 :: IO Int
 day2p2 = do
-    day2p1Input <- readFile "resources/day_2_1_input.txt"
-    let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
-    case gamesParsed of
-        Left e -> error "error parsing"
-        Right games -> do
-            let result = cubeConundrum' games
-            writeFile "dist/day_2_2_output.txt" $ show result
-            return result
+  day2p1Input <- readFile "resources/day_2_1_input.txt"
+  let gamesParsed = parse pGames "resources/day_2_1_input.txt" day2p1Input
+  case gamesParsed of
+    Left e -> error "error parsing"
+    Right games -> do
+      let result = cubeConundrum' games
+      writeFile "dist/day_2_2_output.txt" $ show result
+      return result
 
 day3p1 :: IO Int
 day3p1 = do
-    day3p1Input <- readFile "resources/day_3_1_input.txt"
-    let lns = map (++ ['.']) $ lines day3p1Input
-    let numCols = length $ head lns
-    let schematicParsed = parse (pSchematic numCols) "resources/day_3_1_input.txt" $ concat lns
-    case schematicParsed of
-        Left e -> error "error parsing"
-        Right schematic -> do
-            print $ fst schematic
-            let result = uncurry gearRatios schematic
-            writeFile "dist/day_3_1_output.txt" $ show result
-            return result
+  day3p1Input <- readFile "resources/day_3_1_input.txt"
+  let lns = map (++ ['.']) $ lines day3p1Input
+  let numCols = length $ head lns
+  let schematicParsed = parse (pSchematic numCols) "resources/day_3_1_input.txt" $ concat lns
+  case schematicParsed of
+    Left e -> error "error parsing"
+    Right schematic -> do
+      print $ fst schematic
+      let result = uncurry gearRatios schematic
+      writeFile "dist/day_3_1_output.txt" $ show result
+      return result
+
+day3p2 :: IO Int
+day3p2 = do
+  day3p1Input <- readFile "resources/day_3_1_input.txt"
+  let lns = map (++ ['.']) $ lines day3p1Input
+  let numCols = length $ head lns
+  let schematicParsed = parse (pSchematic numCols) "resources/day_3_1_input.txt" $ concat lns
+  case schematicParsed of
+    Left e -> error "error parsing"
+    Right schematic -> do
+      print $ fst schematic
+      let result = uncurry gearRatios' schematic
+      writeFile "dist/day_3_2_output.txt" $ show result
+      return result
 
 main :: IO ()
 main = do
-    createDirectoryIfMissing True "dist"
-    day1p1Result <- day1p1
-    putStrLn $ "day 1 - part 1 - result: " ++ show day1p1Result
-    day1p2Result <- day1p2
-    putStrLn $ "day 1 - part 2 - result: " ++ show day1p2Result
-    day2p1Result <- day2p1
-    putStrLn $ "day 2 - part 1 - result: " ++ show day2p1Result
-    day2p2Result <- day2p2
-    putStrLn $ "day 2 - part 2 - result: " ++ show day2p2Result
-    day3p1Result <- day3p1
-    putStrLn $ "day 3 - part 1 - result: " ++ show day3p1Result
+  createDirectoryIfMissing True "dist"
+  day1p1Result <- day1p1
+  putStrLn $ "day 1 - part 1 - result: " ++ show day1p1Result
+  day1p2Result <- day1p2
+  putStrLn $ "day 1 - part 2 - result: " ++ show day1p2Result
+  day2p1Result <- day2p1
+  putStrLn $ "day 2 - part 1 - result: " ++ show day2p1Result
+  day2p2Result <- day2p2
+  putStrLn $ "day 2 - part 2 - result: " ++ show day2p2Result
+  day3p1Result <- day3p1
+  putStrLn $ "day 3 - part 1 - result: " ++ show day3p1Result
+  day3p2Result <- day3p2
+  putStrLn $ "day 3 - part 2 - result: " ++ show day3p2Result
