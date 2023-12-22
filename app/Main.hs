@@ -14,10 +14,13 @@ import qualified Data.Map.Strict as Map
 import Data.Tuple (swap)
 import Data.Maybe
 import Text.Megaparsec.Char
+import Text.Megaparsec.Byte.Lexer (symbol)
+import Control.Monad (foldM_)
+import Data.Type.Coercion (sym)
 
 type Position = (Int, Int)
-type MatrixNum = (Int, [Int])
-type MatrixSymbol = (Char, Int)
+type MatrixNum = (Int, [Position])
+type MatrixSymbol = (Position, Char)
 
 data Cube = Red | Green | Blue
     deriving (Show, Eq, Ord)
@@ -188,8 +191,11 @@ cubeConundrum' :: [Game] -> Int
 cubeConundrum' =
     sum . map (product . map fst . minimumConfig)
 
+getIndices :: Int -> Int -> (Int, Int)
+getIndices offset numCols = (offset `div` numCols, offset `mod` numCols)
+
 isSymbol' :: Char -> Bool
-isSymbol' c = not (isAlphaNum c) && (c /= '.')
+isSymbol' c = not (isAlphaNum c) && (c /= '.') && (c /= '\n')
 
 pSymbol :: Parser Char
 pSymbol = satisfy isSymbol'
@@ -212,21 +218,24 @@ pDigitsWithOffsets' = takeWhile1P Nothing isNumber
 pSymbolWithOffset :: Parser (Char, Int)
 pSymbolWithOffset = pWithOffset pSymbol
 
-pMatrixNum :: Parser MatrixNum
-pMatrixNum =
+pMatrixSymbol :: Int -> Parser MatrixSymbol
+pMatrixSymbol numCols = (\(c, i) -> (getIndices i numCols, c)) <$> pSymbolWithOffset
+
+pMatrixNum :: Int -> Parser MatrixNum
+pMatrixNum numCols =
    (\(x, y) -> (read x, y))
-   <$> foldr (\(c, i) acc -> (c : fst acc, i : snd acc)) ("", [])
+   <$> foldr (\(c, i) acc -> (c : fst acc, getIndices i numCols : snd acc)) ("", [])
    <$> pDigitsWithOffsets
 
-pMatrixNumOrSymbol :: Parser (Either MatrixNum MatrixSymbol)
-pMatrixNumOrSymbol = Left <$> pMatrixNum <|> Right <$> pSymbolWithOffset
+pMatrixNumOrSymbol :: Int -> Parser (Either MatrixNum MatrixSymbol)
+pMatrixNumOrSymbol numCols = Left <$> pMatrixNum numCols <|> Right <$> pMatrixSymbol numCols
 
-pMatrixNumOrSymbolOrPeriod :: Parser (Either (Either MatrixNum MatrixSymbol) Char)
-pMatrixNumOrSymbolOrPeriod = Left <$> pMatrixNumOrSymbol <|> Right <$> pPeriod
+pMatrixNumOrSymbolOrPeriod :: Int -> Parser (Either (Either MatrixNum MatrixSymbol) Char)
+pMatrixNumOrSymbolOrPeriod numCols = Left <$> pMatrixNumOrSymbol numCols <|> Right <$> pPeriod
 
-pSchematic :: Parser ([MatrixNum],[MatrixSymbol])
-pSchematic = 
-  foldr 
+pSchematic :: Int -> Parser ([MatrixNum],[MatrixSymbol])
+pSchematic numCols =
+  foldr
      (\e acc ->
         case e of
             Left e' ->
@@ -235,24 +244,36 @@ pSchematic =
                     Right ms -> (fst acc, ms : snd acc)
             Right _ -> acc
      )
-     ([],[]) 
-  <$> concat 
-  <$> sepBy1 (some pMatrixNumOrSymbolOrPeriod) eol
+     ([],[])
+  <$> (some $ pMatrixNumOrSymbolOrPeriod numCols)
 
--- parse numbers including all of there indices
+hasAdjacentSymbol :: Map.Map Position Char -> MatrixNum -> Bool
+hasAdjacentSymbol symbolMap (num, positions) =
+    any
+    (\(i, j) ->
+        let
+            hasSymbolTopLeft = Map.member (i - 1, j - 1) symbolMap
+            hasSymbolTopMiddle = Map.member (i - 1, j) symbolMap
+            hasSymbolTopRight = Map.member (i - 1, j + 1) symbolMap
+            hasSymbolMiddleRight = Map.member (i, j + 1) symbolMap
+            hasSymbolBottomRight = Map.member (i + 1, j + 1) symbolMap
+            hasSymbolBottomMiddle = Map.member (i + 1, j) symbolMap
+            hasSymbolBottomLeft = Map.member (i + 1, j - 1) symbolMap
+            hasSymbolMiddleLeft = Map.member (i , j - 1) symbolMap
+        in
+            hasSymbolTopLeft || hasSymbolTopMiddle || hasSymbolTopRight ||
+            hasSymbolMiddleLeft ||                    hasSymbolMiddleRight ||
+            hasSymbolBottomLeft || hasSymbolBottomMiddle || hasSymbolBottomRight
+            
+    )
+    positions
 
-getSymbolsInSchematic :: [[Char]] -> [MatrixSymbol]
-getSymbolsInSchematic schematic = undefined
+gearRatios :: [MatrixNum] -> [MatrixSymbol] -> Int
+gearRatios numbers symbols =
+    let symbolMap = Map.fromList symbols
+    in
+    sum $ map fst $ filter (hasAdjacentSymbol symbolMap) numbers
 
-hasAdjacentSymbol :: [MatrixSymbol] -> MatrixNum -> Bool
-hasAdjacentSymbol symbols num = undefined
-
-gearRatios :: [[Char]] -> Int
-gearRatios schematic =
-    sum $ map fst $ filter (hasAdjacentSymbol symbols) numbers
-    where
-        symbols = getSymbolsInSchematic schematic
-        numbers = undefined
 
 day1p1 :: IO Int
 day1p1 = do
@@ -294,11 +315,16 @@ day2p2 = do
 day3p1 :: IO Int
 day3p1 = do
     day3p1Input <- readFile "resources/day_3_1_input.txt"
-    let schematicParsed = parse pSchematic "resources/day_3_1_input.txt" day3p1Input
-    print schematicParsed
-    let result = gearRatios undefined
-    writeFile "dist/day_1_2_output.txt" $ show result
-    return result
+    let lns = map (++ ['.']) $ lines day3p1Input
+    let numCols = length $ head lns
+    let schematicParsed = parse (pSchematic numCols) "resources/day_3_1_input.txt" $ concat lns
+    case schematicParsed of
+        Left e -> error "error parsing"
+        Right schematic -> do
+            print $ fst schematic
+            let result = uncurry gearRatios schematic
+            writeFile "dist/day_3_1_output.txt" $ show result
+            return result
 
 main :: IO ()
 main = do
@@ -311,3 +337,5 @@ main = do
     putStrLn $ "day 2 - part 1 - result: " ++ show day2p1Result
     day2p2Result <- day2p2
     putStrLn $ "day 2 - part 2 - result: " ++ show day2p2Result
+    day3p1Result <- day3p1
+    putStrLn $ "day 3 - part 1 - result: " ++ show day3p1Result
