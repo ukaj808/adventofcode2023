@@ -272,7 +272,7 @@ hasAdjacentSymbol symbolMap (positions, num) =
     positions
 
 --todo should actually be a map of position -> int! flatten the indicies!!
-getAdjacentNumbers :: Map.Map [Position] Int -> MatrixSymbol -> [Int]
+getAdjacentNumbers :: Map.Map Position Int -> MatrixSymbol -> [Int]
 getAdjacentNumbers matrixNumMap ((i, j), _) =
   let surroundingIndices =
         [ (i - 1, j - 1),
@@ -285,13 +285,15 @@ getAdjacentNumbers matrixNumMap ((i, j), _) =
           (i, j - 1)
         ]
    in foldr
-        (\(i', j') ->
-            undefined
+        (\pos acc ->
+            case Map.lookup pos matrixNumMap of
+              Nothing -> acc
+              Just x -> x : acc 
         )
         []
         surroundingIndices
 
-collectGears :: Map.Map [Position] Int -> [MatrixSymbol] -> [(Int, Int)]
+collectGears :: Map.Map Position Int -> [MatrixSymbol] -> [(Int, Int)]
 collectGears matrixNumMap symbols =
   foldr
     ( \((i, j), c) acc ->
@@ -299,13 +301,22 @@ collectGears matrixNumMap symbols =
           then
             let adjNums = getAdjacentNumbers matrixNumMap ((i, j), c)
              in if length adjNums == 2
-                  then (adjNums!!0, adjNums!!1) : acc
+                  then (head adjNums, adjNums!!1) : acc
                   else acc
           else acc
     )
     []
     symbols
 
+createNumPosMap :: [MatrixNum] -> Map.Map Position Int
+createNumPosMap mNums =
+  Map.fromList $
+      foldr
+      (\(positions, num) acc ->
+        acc ++ map (\p -> (p, num)) positions
+      )
+      []
+      mNums
 gearRatios :: [MatrixNum] -> [MatrixSymbol] -> Int
 gearRatios numbers symbols =
   let symbolMap = Map.fromList symbols
@@ -313,9 +324,8 @@ gearRatios numbers symbols =
 
 gearRatios' :: [MatrixNum] -> [MatrixSymbol] -> Int
 gearRatios' numbers symbols =
-  let matrixNumMap = Map.fromList numbers
-      gears = collectGears matrixNumMap symbols
-   in sum $ map (uncurry (*)) gears
+   sum $ map (uncurry (*)) $
+       collectGears (createNumPosMap numbers) symbols
 
 day1p1 :: IO Int
 day1p1 = do
@@ -363,7 +373,6 @@ day3p1 = do
   case schematicParsed of
     Left e -> error "error parsing"
     Right schematic -> do
-      print $ fst schematic
       let result = uncurry gearRatios schematic
       writeFile "dist/day_3_1_output.txt" $ show result
       return result
@@ -377,7 +386,6 @@ day3p2 = do
   case schematicParsed of
     Left e -> error "error parsing"
     Right schematic -> do
-      print $ fst schematic
       let result = uncurry gearRatios' schematic
       writeFile "dist/day_3_2_output.txt" $ show result
       return result
