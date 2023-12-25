@@ -7,6 +7,7 @@ import Data.Foldable
 import Data.List
 import Data.Map.Merge.Strict
 import qualified Data.Map.Strict as Map
+import qualified Data.Set        as Set
 import Data.Maybe
 import Data.Tuple (swap)
 import Data.Type.Coercion (sym)
@@ -284,13 +285,13 @@ getAdjacentNumbers matrixNumMap ((i, j), _) =
           (i + 1, j - 1),
           (i, j - 1)
         ]
-   in foldr
+   in Set.toList $ foldr
         (\pos acc ->
             case Map.lookup pos matrixNumMap of
               Nothing -> acc
-              Just x -> x : acc 
+              Just x -> x `Set.insert` acc
         )
-        []
+        Set.empty
         surroundingIndices
 
 collectGears :: Map.Map Position Int -> [MatrixSymbol] -> [(Int, Int)]
