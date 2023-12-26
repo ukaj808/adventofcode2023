@@ -7,8 +7,8 @@ import Data.Foldable
 import Data.List
 import Data.Map.Merge.Strict
 import qualified Data.Map.Strict as Map
-import qualified Data.Set        as Set
 import Data.Maybe
+import qualified Data.Set as Set
 import Data.Tuple (swap)
 import Data.Type.Coercion (sym)
 import Data.Void
@@ -33,6 +33,9 @@ data Cube = Red | Green | Blue
 
 data Game = Game {gameId :: Int, rounds :: [[(Int, Cube)]]}
   deriving (Show)
+
+data Card = Card Int [Int] [Int]
+  deriving Show
 
 type Parser = Parsec Void String
 
@@ -216,8 +219,6 @@ pWithOffset pa = do
 pDigitsWithOffsets :: Parser [(Char, Int)]
 pDigitsWithOffsets = some $ pWithOffset digitChar
 
-pDigitsWithOffsets' :: Parser String
-pDigitsWithOffsets' = takeWhile1P Nothing isNumber
 
 pSymbolWithOffset :: Parser (Char, Int)
 pSymbolWithOffset = pWithOffset pSymbol
@@ -249,6 +250,31 @@ pSchematic numCols =
     ([], [])
     <$> some (pMatrixNumOrSymbolOrPeriod numCols)
 
+pListSep :: Parser ()
+pListSep = string " |" >> pure ()
+
+pEol :: Parser ()
+pEol = char '\n' >> pure ()
+
+pInt :: Parser Int
+pInt = read <$> (skipMany (char ' ') >> takeWhile1P Nothing isNumber)
+
+pListOfInts :: Parser [Int]
+pListOfInts = manyTill pInt (pListSep <|> pEol <|> eof)
+
+pCard :: Parser Card
+pCard = 
+  Card 
+    <$> 
+    (string "Card " >> pInt)
+    <*>
+    (char ':'  >> pListOfInts)
+    <*>
+    pListOfInts
+
+pCards :: Parser [Card]
+pCards = some pCard
+
 hasAdjacentSymbol :: Map.Map Position Char -> MatrixNum -> Bool
 hasAdjacentSymbol symbolMap (positions, num) =
   any
@@ -272,7 +298,7 @@ hasAdjacentSymbol symbolMap (positions, num) =
     )
     positions
 
---todo should actually be a map of position -> int! flatten the indicies!!
+-- todo should actually be a map of position -> int! flatten the indicies!!
 getAdjacentNumbers :: Map.Map Position Int -> MatrixSymbol -> [Int]
 getAdjacentNumbers matrixNumMap ((i, j), _) =
   let surroundingIndices =
@@ -285,14 +311,15 @@ getAdjacentNumbers matrixNumMap ((i, j), _) =
           (i + 1, j - 1),
           (i, j - 1)
         ]
-   in Set.toList $ foldr
-        (\pos acc ->
-            case Map.lookup pos matrixNumMap of
-              Nothing -> acc
-              Just x -> x `Set.insert` acc
-        )
-        Set.empty
-        surroundingIndices
+   in Set.toList $
+        foldr
+          ( \pos acc ->
+              case Map.lookup pos matrixNumMap of
+                Nothing -> acc
+                Just x -> x `Set.insert` acc
+          )
+          Set.empty
+          surroundingIndices
 
 collectGears :: Map.Map Position Int -> [MatrixSymbol] -> [(Int, Int)]
 collectGears matrixNumMap symbols =
@@ -302,7 +329,7 @@ collectGears matrixNumMap symbols =
           then
             let adjNums = getAdjacentNumbers matrixNumMap ((i, j), c)
              in if length adjNums == 2
-                  then (head adjNums, adjNums!!1) : acc
+                  then (head adjNums, adjNums !! 1) : acc
                   else acc
           else acc
     )
@@ -312,12 +339,13 @@ collectGears matrixNumMap symbols =
 createNumPosMap :: [MatrixNum] -> Map.Map Position Int
 createNumPosMap mNums =
   Map.fromList $
-      foldr
-      (\(positions, num) acc ->
-        acc ++ map (\p -> (p, num)) positions
+    foldr
+      ( \(positions, num) acc ->
+          acc ++ map (\p -> (p, num)) positions
       )
       []
       mNums
+
 gearRatios :: [MatrixNum] -> [MatrixSymbol] -> Int
 gearRatios numbers symbols =
   let symbolMap = Map.fromList symbols
@@ -325,8 +353,22 @@ gearRatios numbers symbols =
 
 gearRatios' :: [MatrixNum] -> [MatrixSymbol] -> Int
 gearRatios' numbers symbols =
-   sum $ map (uncurry (*)) $
-       collectGears (createNumPosMap numbers) symbols
+  sum $
+    map (uncurry (*)) $
+      collectGears (createNumPosMap numbers) symbols
+
+
+tally :: Int -> Int
+tally x | x <= 0 = 0
+        | x == 1  = 1
+        | otherwise = (^) 2 (x - 1)
+
+cardWorth :: Card -> Int
+cardWorth (Card _ winNums myNums) =
+  tally $ length $ filter (`elem` winNums) myNums
+
+scratchCards :: [Card] -> Int
+scratchCards = sum . map cardWorth
 
 day1p1 :: IO Int
 day1p1 = do
@@ -391,6 +433,17 @@ day3p2 = do
       writeFile "dist/day_3_2_output.txt" $ show result
       return result
 
+day4p1 :: IO Int
+day4p1 = do
+  day4p1Input <- readFile "resources/day_4_1_input.txt"
+  let pileParsed = parse pCards "resources/day_4_1_input.txt" day4p1Input
+  case pileParsed of
+    Left e -> error "error parsing"
+    Right pile -> do
+      let result = scratchCards pile
+      writeFile "dist/day_4_1_output.txt" $ show result
+      return result
+
 main :: IO ()
 main = do
   createDirectoryIfMissing True "dist"
@@ -406,3 +459,5 @@ main = do
   putStrLn $ "day 3 - part 1 - result: " ++ show day3p1Result
   day3p2Result <- day3p2
   putStrLn $ "day 3 - part 2 - result: " ++ show day3p2Result
+  day4p1Result <- day4p1
+  putStrLn $ "day 4 - part 1 - result: " ++ show day4p1Result
