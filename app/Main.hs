@@ -12,6 +12,7 @@ import qualified Data.Set as Set
 import Data.Tuple (swap)
 import Data.Type.Coercion (sym)
 import Data.Void
+import GHC.Conc.IO (threadDelay)
 import GHC.Plugins (DynFlags (backend), sep)
 import GHC.Utils.Binary (Binary (put))
 import GHC.Utils.Misc (split)
@@ -19,7 +20,6 @@ import System.Directory
 import Text.Megaparsec
 import Text.Megaparsec.Byte.Lexer (symbol)
 import Text.Megaparsec.Char
-import GHC.Conc.IO (threadDelay)
 
 type Position = (Int, Int)
 
@@ -36,7 +36,7 @@ data Game = Game {gameId :: Int, rounds :: [[(Int, Cube)]]}
   deriving (Show)
 
 data Card = Card Int [Int] [Int]
-  deriving Show
+  deriving (Show)
 
 type Parser = Parsec Void String
 
@@ -220,7 +220,6 @@ pWithOffset pa = do
 pDigitsWithOffsets :: Parser [(Char, Int)]
 pDigitsWithOffsets = some $ pWithOffset digitChar
 
-
 pSymbolWithOffset :: Parser (Char, Int)
 pSymbolWithOffset = pWithOffset pSymbol
 
@@ -264,14 +263,11 @@ pListOfInts :: Parser [Int]
 pListOfInts = manyTill pInt (pListSep <|> pEol <|> eof)
 
 pCard :: Parser Card
-pCard = 
-  Card 
-    <$> 
-    (string "Card " >> pInt)
-    <*>
-    (char ':'  >> pListOfInts)
-    <*>
-    pListOfInts
+pCard =
+  Card
+    <$> (string "Card " >> pInt)
+    <*> (char ':' >> pListOfInts)
+    <*> pListOfInts
 
 pCards :: Parser [Card]
 pCards = some pCard
@@ -358,14 +354,14 @@ gearRatios' numbers symbols =
     map (uncurry (*)) $
       collectGears (createNumPosMap numbers) symbols
 
-
 tally :: Int -> Int
-tally x | x <= 0 = 0
-        | x == 1  = 1
-        | otherwise = (^) 2 (x - 1)
+tally x
+  | x <= 0 = 0
+  | x == 1 = 1
+  | otherwise = (^) 2 (x - 1)
 
 getWinners :: [Int] -> [Int] -> [Int]
-getWinners winNums = filter (`elem` winNums)  
+getWinners winNums = filter (`elem` winNums)
 
 countWinningNumbers :: [Int] -> [Int] -> Int
 countWinningNumbers winNums = length . getWinners winNums
@@ -376,23 +372,56 @@ cardWorth (Card _ winNums myNums) = tally $ countWinningNumbers winNums myNums
 scratchCards :: [Card] -> Int
 scratchCards = sum . map cardWorth
 
-scratchCards' :: [Card] -> Int
-scratchCards' [] = 0
-scratchCards' ((Card _ winNums myNums):rest) =
 
-  1 + scratchCards' (take (countWinningNumbers winNums myNums) rest)
+scratchCards' :: [Card] -> IO Int
+scratchCards' [] = pure 0
+scratchCards' ((Card cid winNums myNums) : cs) = do
+  originalRes <- scratchCards' cs
+  let copies = take (countWinningNumbers winNums myNums) cs
+  copyRes <- scratchCards' (take (countWinningNumbers winNums myNums) cs)
+  putStrLn $ "Card " ++ show cid ++ " 1 + " ++ show originalRes ++ " + " ++ show copyRes ++ "(Copies: " ++ show copies ++ ")"
+  return $ 1 + originalRes + copyRes
 
-  where
-    go acc [] = 0
-    go acc ((Card _ winNums' myNums'):rest') =
-      go (acc + 1) (take (countWinningNumbers winNums' myNums') rest')
+collectWinningCopies :: [Card] -> [Card]
+collectWinningCopies cards =
+  foldr
+        ( \(Card cid winNums myNums) acc ->
+            let copies = take (countWinningNumbers winNums myNums) (drop cid cards)
+            in
+              acc ++ copies
+        )
+        []
+        cards
+
+
+{-
+Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53 -- 4 [2, 3, 4, 5]
+Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19 -- 2 [3, 4]
+Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1 -- 2 [4, 5]
+Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83 -- 1 [5]
+Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36 -- 0 []
+Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11 -- 0 []
+-}
+sc :: [Card] -> Int
+sc [] = 0
+sc cards =
+  let winningCopies = collectWinningCopies cards
+  in
+  1 + 
+  length winningCopies + 
+  foldr (\c@(Card cid winNum myNum) acc ->
+                  do
+                    undefined
+             ) 0 winningCopies
+       
+
 
 
 {-
 scratchCards'IO :: [Card] -> IO Int
 scratchCards'IO [] = return 0
 scratchCards'IO ((Card cid winNums myNums):cs) =
-  let 
+  let
     winNumCount = countWinningNumbers winNums myNums
   in do
     print $ "Card " ++ show cid ++ " Occured"
@@ -406,7 +435,6 @@ scratchCards'IO ((Card cid winNums myNums):cs) =
         cs
     return x
 -}
-
 
 {-
 Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
@@ -494,11 +522,11 @@ day4p1 = do
 day4p2 :: IO Int
 day4p2 = do
   day4p1Input <- readFile "resources/day_4_1_input.txt"
-  let pileParsed = parse pCards "resources/day_4_1_input.txt" day4p1Input
+  let pileParsed = parse pCards "resources/day_4_1_input.txt" "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53\nCard 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19\nCard 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1\nCard 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83\nCard 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36\nCard 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11"
   case pileParsed of
     Left e -> error "error parsing"
     Right pile -> do
-      let result = scratchCards' pile
+      result <- sc pile
       writeFile "dist/day_4_2_output.txt" $ show result
       return result
 
@@ -519,3 +547,5 @@ main = do
   putStrLn $ "day 3 - part 2 - result: " ++ show day3p2Result
   day4p1Result <- day4p1
   putStrLn $ "day 4 - part 1 - result: " ++ show day4p1Result
+  day4p2Result <- day4p2
+  putStrLn $ "day 4 - part 2 - result: " ++ show day4p2Result
