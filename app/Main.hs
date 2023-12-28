@@ -372,78 +372,38 @@ cardWorth (Card _ winNums myNums) = tally $ countWinningNumbers winNums myNums
 scratchCards :: [Card] -> Int
 scratchCards = sum . map cardWorth
 
+getWinningCopiesForCard :: Card -> [Card] -> [Card]
+getWinningCopiesForCard (Card cId winNums myNums) originalDeck =
+  take (countWinningNumbers winNums myNums) (drop cId originalDeck)
 
-scratchCards' :: [Card] -> IO Int
-scratchCards' [] = pure 0
-scratchCards' ((Card cid winNums myNums) : cs) = do
-  originalRes <- scratchCards' cs
-  let copies = take (countWinningNumbers winNums myNums) cs
-  copyRes <- scratchCards' (take (countWinningNumbers winNums myNums) cs)
-  putStrLn $ "Card " ++ show cid ++ " 1 + " ++ show originalRes ++ " + " ++ show copyRes ++ "(Copies: " ++ show copies ++ ")"
-  return $ 1 + originalRes + copyRes
-
-collectWinningCopies :: [Card] -> [Card]
-collectWinningCopies cards =
-  foldr
-        ( \(Card cid winNums myNums) acc ->
-            let copies = take (countWinningNumbers winNums myNums) (drop cid cards)
-            in
-              acc ++ copies
-        )
-        []
-        cards
-
+getAllWinningCopies :: [Card] -> [Card] -> [Card]
+getAllWinningCopies [] _ = []
+getAllWinningCopies cards originalDeck =
+  let allCopies =
+        foldr
+            ( \c acc ->
+                let copies = getWinningCopiesForCard c originalDeck
+                 in acc ++ copies
+            )
+            []
+            cards
+   in allCopies
+        ++ getAllWinningCopies
+          allCopies
+          originalDeck
 
 {-
-Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53 -- 4 [2, 3, 4, 5]
-Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19 -- 2 [3, 4]
-Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1 -- 2 [4, 5]
-Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83 -- 1 [5]
+Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53 -- 4 [2, 3, 4, 5]  [(2, 3, 4, 5), (3, 4) (4, 5) (5)]
+Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19 -- 2 [3, 4]        [(3, 4), (4, 5), (5), (4, 5) (5) (5)]
+Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1 -- 2 [4, 5]        [(4, 5) (5) (5) ) (5)]
+Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83 -- 1 [5]           [(5)]
 Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36 -- 0 []
 Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11 -- 0 []
 -}
-sc :: [Card] -> Int
-sc [] = 0
-sc cards =
-  let winningCopies = collectWinningCopies cards
-  in
-  1 + 
-  length winningCopies + 
-  foldr (\c@(Card cid winNum myNum) acc ->
-                  do
-                    undefined
-             ) 0 winningCopies
-       
-
-
-
-{-
-scratchCards'IO :: [Card] -> IO Int
-scratchCards'IO [] = return 0
-scratchCards'IO ((Card cid winNums myNums):cs) =
-  let
-    winNumCount = countWinningNumbers winNums myNums
-  in do
-    print $ "Card " ++ show cid ++ " Occured"
-    threadDelay 1000000
-    x <- foldrM
-        (\x acc -> do
-          x' <- scratchCards'IO (take winNumCount cs)
-          return $ acc + x' + 1
-        )
-        0
-        cs
-    return x
--}
-
-{-
-Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
-Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
-Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
-Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
-Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
-Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11
--}
+scratchCards' :: [Card] -> Int
+scratchCards' [] = 0
+scratchCards' cards =
+  length cards + length (getAllWinningCopies cards cards)
 
 day1p1 :: IO Int
 day1p1 = do
@@ -522,11 +482,11 @@ day4p1 = do
 day4p2 :: IO Int
 day4p2 = do
   day4p1Input <- readFile "resources/day_4_1_input.txt"
-  let pileParsed = parse pCards "resources/day_4_1_input.txt" "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53\nCard 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19\nCard 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1\nCard 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83\nCard 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36\nCard 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11"
+  let pileParsed = parse pCards "resources/day_4_1_input.txt" day4p1Input
   case pileParsed of
     Left e -> error "error parsing"
     Right pile -> do
-      result <- sc pile
+      let result = scratchCards' pile
       writeFile "dist/day_4_2_output.txt" $ show result
       return result
 
