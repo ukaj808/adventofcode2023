@@ -383,14 +383,13 @@ getAllWinningCopies cards originalDeck =
         foldr
             ( \c acc ->
                 let copies = getWinningCopiesForCard c originalDeck
-                 in acc ++ copies
+                 in copies ++ acc
             )
             []
             cards
-   in allCopies
-        ++ getAllWinningCopies
+   in getAllWinningCopies
           allCopies
-          originalDeck
+          originalDeck ++ allCopies
 
 {-
 Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53 -- 4 [2, 3, 4, 5]  [(2, 3, 4, 5), (3, 4) (4, 5) (5)]
